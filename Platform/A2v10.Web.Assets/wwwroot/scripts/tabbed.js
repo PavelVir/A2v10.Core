@@ -507,33 +507,50 @@ app.modules['std:signalR'] = function () {
 				let tabs = window.localStorage.getItem(this.storageKey);
 				if (!tabs) {
 					this.selectHome(true);
-					return;
-				}
-				try {
-					let elems = JSON.parse(tabs);
-					let ix = elems.index;
-					let len = elems.tabs.length;
-					for (let i = 0; i < len; i++) {
-						let t = elems.tabs[i];
-						let loaded = ix === i;
-						if (loaded)
-							this.navigatingUrl = t.url;
-						this.tabs.push({
-							title: t.title, url: t.url, query: t.query,
-							cnt: t.cnt || len - i - 1, o: i + 1, loaded, key: tabKey++, root: null, parentUrl: t.parentUrl, reload: 0, debug: false
-						});
+				} else {
+					try {
+						let elems = JSON.parse(tabs);
+						let ix = elems.index;
+						let len = elems.tabs.length;
+						for (let i = 0; i < len; i++) {
+							let t = elems.tabs[i];
+							let loaded = ix === i;
+							if (loaded)
+								this.navigatingUrl = t.url;
+							this.tabs.push({
+								title: t.title, url: t.url, query: t.query,
+								cnt: t.cnt || len - i - 1, o: i + 1, loaded, key: tabKey++, root: null, parentUrl: t.parentUrl, reload: 0, debug: false
+							});
+						}
+						for (let i = 0; i < elems.closedTabs.length; i++) {
+							let t = elems.closedTabs[i];
+							this.closedTabs.push({ title: t.title, url: t.url, query: t.query, cnt: 1, loaded: true, key: tabKey++ });
+						}
+						if (ix >= 0 && ix < this.tabs.length)
+							this.activeTab = this.tabs[ix];
+						else
+							this.selectHome(true);
+					} catch (err) {
 					}
-					for (let i = 0; i < elems.closedTabs.length; i++) {
-						let t = elems.closedTabs[i];
-						this.closedTabs.push({ title: t.title, url: t.url, query: t.query, cnt: 1, loaded: true, key: tabKey++ });
-					}
-					if (ix >= 0 && ix < this.tabs.length)
-						this.activeTab = this.tabs[ix];
-					else
-						this.selectHome(true);
-				} catch (err) {
+					this.maxUsed = Math.max(...this.tabs.map(t => t.cnt));
 				}
-				this.maxUsed = Math.max(...this.tabs.map(t => t.cnt));
+
+				// Handle direct URL from browser address bar (e.g., /plan/basicplan/edit/10256)
+				if (path && path !== '/' && path !== '/_home/index/0') {
+					let pathParts = path.split('?');
+					let urlPath = pathParts[0];
+					let query = pathParts.length > 1 ? '?' + pathParts[1] : '';
+					let segments = urlPath.split('/').filter(s => s);
+
+					// Direct link to specific page (e.g., /plan/basicplan/edit/10256)
+					if (segments.length >= 3) {
+						setTimeout(() => {
+							this.navigate({ url: urlPath, query: query, title: '' });
+							// Clear the URL to avoid reopening on refresh
+							history.replaceState(null, '', '/');
+						}, 100);
+					}
+				}
 			},
 			toggleTabPopup() {
 				eventBus.$emit('closeAllPopups');
