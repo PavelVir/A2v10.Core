@@ -9337,8 +9337,11 @@ TODO:
 				// HACK!
 				this.filteredCount = arr.length;
 				// pager
-				if (this.pageSize > 0)
+				if (this.pageSize > 0) {
+					if (this.offset >= arr.length && arr.length > 0)
+						this.localQuery.offset = 0;
 					arr = arr.slice(this.offset, this.offset + this.pageSize);
+				}
 				arr.$origin = this.ItemsSource;
 				if (arr.indexOf(arr.$origin.$selected) === -1) {
 					// not found in target array
