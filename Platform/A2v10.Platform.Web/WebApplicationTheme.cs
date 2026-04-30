@@ -1,8 +1,6 @@
-﻿// Copyright © 2021-2025 Oleksandr Kukhtin. All rights reserved.
+﻿// Copyright © 2021-2026 Oleksandr Kukhtin. All rights reserved.
 
 using System;
-using System.IO;
-using System.Text;
 
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.Options;
@@ -12,48 +10,89 @@ using A2v10.Infrastructure;
 
 namespace A2v10.Platform.Web;
 
-public class WebApplicationTheme(IWebHostEnvironment _webHostEnviromnent, IOptions<AppOptions> options, IUserDevice _userDevice) : IApplicationTheme
+public class WebApplicationTheme(IWebHostEnvironment _webHostEnvironment, IOptions<AppOptions> options, IUserDevice _userDevice, ICurrentUser _currentUser) : IApplicationTheme
 {
-	private readonly AppOptions _appOptions = options.Value;
+    private const String DefaultTheme = "classic";
+
+    private readonly AppOptions _appOptions = options.Value;
+
+    #region IApplicationTheme
+    public String LogoUrl()
+    {
+        const String appLogo = "/img/applogo.svg";
+
+        var fi = _webHostEnvironment.WebRootFileProvider.GetFileInfo(appLogo);
+        return fi.Exists ? appLogo : String.Empty;
+    }
+
+    public String BodyCssClass => _appOptions.BodyCssClass ?? String.Empty;
+    public String HtmlCssClass => IsDark ? "dark" : String.Empty;
+
+    public Boolean IsDarkThemeEnabled => !String.IsNullOrEmpty(_appOptions.DarkTheme);
+    public Boolean IsDark => _currentUser.Identity.Theme == "D";
+
 
     public String MakeTheme()
     {
-		String theme = _appOptions.Theme ?? "classic";
-		String? colorScheme = null;
-		if (theme.Contains('.'))
-		{
-			var tx = theme.Split('.');
-			theme = tx[0].Trim().ToLowerInvariant();
-			colorScheme = tx[1].Trim().ToLowerInvariant();
-		}
-		if (theme == "advance" && colorScheme == null)
-			colorScheme = "default";
-		var mobile = _userDevice.IsMobile ? "_mobile": "";
-        var themeFileName = $"/css/{theme}{mobile}.min.css";
-		var tfi = _webHostEnviromnent.WebRootFileProvider.GetFileInfo(themeFileName);
-		var themeFileStamp = tfi.LastModified.ToUnixTimeSeconds().ToString();
-		var sb = new StringBuilder();
-		sb.AppendLine($"<link href=\"{themeFileName}?ts={themeFileStamp}\" rel=\"stylesheet\">");
-		if (colorScheme != null)
-		{
-			var fi = _webHostEnviromnent.WebRootFileProvider.GetFileInfo($"css/{colorScheme}.colorscheme.css");
-			using var rs = fi.CreateReadStream();
-			using var tr = new StreamReader(rs);
-			sb.AppendLine("<style>");
-			sb.Append(tr.ReadToEnd());
-			sb.AppendLine("</style>");
-		}
-		return sb.ToString();
-	}
+        if (IsAuto)
+        {
+            var lightFiles = UserColorScheme(_appOptions.Theme ?? DefaultTheme, "media=\"(prefers-color-scheme:light)\"");
+            var darkFiles = UserColorScheme(_appOptions.DarkTheme ?? DefaultTheme, "media=\"(prefers-color-scheme:dark)\"");
 
-	public String LogoUrl()
-	{
-        var fi = _webHostEnviromnent.WebRootFileProvider.GetFileInfo($"img/applogo.svg");
-		if (fi == null || !fi.Exists)
-			return String.Empty;
-		return "/img/applogo.svg";
+            return $"""
+            <meta name="color-scheme" content="light dark">
+            {lightFiles.theme}
+            {lightFiles.colorScheme}
+            {darkFiles.colorScheme}
+            """;
+        }
+
+        var themeName = IsDarkThemeEnabled && IsDark ? _appOptions.DarkTheme : _appOptions.Theme;
+        var files = UserColorScheme(themeName ?? DefaultTheme);
+
+        var darkContent = IsDark ? "dark" : "light";
+
+        return $"""
+            <meta name="color-scheme" content="{darkContent}">
+            {files.theme}
+            {files.colorScheme}
+            """;
     }
 
-    public String BodyCssClass =>
-		_appOptions.BodyCssClass ?? String.Empty;
+    #endregion
+
+    Boolean IsAuto => IsDarkThemeEnabled && (_currentUser.Identity.Id == null || _currentUser.Identity.Theme == "A");
+
+    (String theme, String colorScheme) UserColorScheme(String theme, String media = "")
+    {
+        String colorScheme = "default";
+        if (theme.Contains('.'))
+        {
+            var tx = theme.Split('.');
+            theme = tx[0].Trim().ToLowerInvariant();
+            colorScheme = tx[1].Trim().ToLowerInvariant();
+        }
+        var mobile = _userDevice.IsMobile ? "_mobile" : "";
+
+        var themeFileName = $"/css/{theme}{mobile}.min.css";
+        var schemeFileName = $"/css/{colorScheme}.colorscheme.min.css";
+
+        var tfi = _webHostEnvironment.WebRootFileProvider.GetFileInfo(themeFileName);
+        var sfi = _webHostEnvironment.WebRootFileProvider.GetFileInfo(schemeFileName);
+
+        if (!tfi.Exists)
+            throw new InvalidOperationException($"Theme file not found: {themeFileName}");
+        if (!sfi.Exists)
+            throw new InvalidOperationException($"Color scheme file not found: {schemeFileName}");
+
+        var themeFileStamp = tfi.LastModified.ToUnixTimeSeconds().ToString();
+        var schemeFileStamp = sfi.LastModified.ToUnixTimeSeconds().ToString();
+
+        var themeFile = $"""<link href="{themeFileName}?ts={themeFileStamp}" rel="stylesheet">""";
+        var schemeFile = $"""<link href="{schemeFileName}?ts={schemeFileStamp}" rel="stylesheet" {media}>""";
+
+        return (themeFile, schemeFile);
+
+    }
+
 }

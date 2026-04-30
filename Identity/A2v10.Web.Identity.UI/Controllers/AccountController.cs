@@ -96,7 +96,22 @@ public class AccountController(
 		return _dbContext.LoadAsync<AppTitleModel>(CatalogDataSource, "a2sys.[AppTitle.Load]");
 	}
 
-	[HttpGet]
+	[HttpPost]
+	public async Task<IActionResult> DarkMode([FromQuery] String theme)
+	{
+		var isAuth = User?.Identity?.IsAuthenticated;
+		if (!isAuth.HasValue || !isAuth.Value)
+			throw new InvalidOperationException("Invalid Request");
+		var appUser = await _userManager.FindByIdAsync(User!.Identity.GetUserId<Int64>().ToString()) ??
+			throw new InvalidOperationException("User not found");
+		appUser.Theme = theme; // Dark/Light/Auto	
+        appUser.Flags = UpdateFlags.Theme;
+		await _userManager.UpdateAsync(appUser);
+        await _signInManager.RefreshSignInAsync(appUser);
+        return Ok();
+    }
+
+    [HttpGet]
 	public async Task<IActionResult> OpenIdLogin(String provider)
 	{
 		var availableSchemes = await _signInManager.GetExternalAuthenticationSchemesAsync();

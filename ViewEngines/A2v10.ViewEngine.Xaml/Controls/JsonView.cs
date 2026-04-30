@@ -1,11 +1,12 @@
-﻿// Copyright © 2025 Oleksandr Kukhtin. All rights reserved.
+﻿// Copyright © 2025-2026 Oleksandr Kukhtin. All rights reserved.
 
 namespace A2v10.Xaml;
 
 public class JsonView : UIElementBase
 {
-    public Object? Source { get; set; }
-    public Length? Height { get; set; }
+    public Object? Source { get; init; }
+    public Length? Height { get; init; }
+    public Length? Width { get; init; }
 
     public override void RenderElement(RenderContext context, Action<TagBuilder>? onRender = null)
     {
@@ -15,6 +16,8 @@ public class JsonView : UIElementBase
         MergeAttributes(div, context);
         if (Height != null)
             div.MergeStyle("height", Height.Value);
+        if (Width != null)
+            div.MergeStyle("width", Width.Value);
         div.RenderStart(context);
         var json = new TagBuilder("a2-json-browser");
         var bind = GetBinding(nameof(Source));

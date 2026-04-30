@@ -1,8 +1,8 @@
 ﻿/*
-Copyright © 2008-2025 Oleksandr Kukhtin
+Copyright © 2008-2026 Oleksandr Kukhtin
 
-Last updated : 31 may 2025
-module version : 8553
+Last updated : 18 apr 2026
+module version : 8634
 */
 ------------------------------------------------
 if not exists(select * from INFORMATION_SCHEMA.SCHEMATA where SCHEMA_NAME=N'a2sys')
@@ -79,12 +79,17 @@ create table a2security.Users
 	IsApiUser bit constraint DF_UsersIsApiUser default(0),
 	IsExternalLogin bit constraint DF_UsersIsExternalLogin default(0),
 	IsBlocked bit constraint DF_UsersIsBlocked default(0),
+	Theme nchar(1) constraint DF_UsersTheme default(N'A'),
 	UtcDateCreated datetime not null constraint DF_Users_UtcDateCreated default(getutcdate())
 );
 go
 ------------------------------------------------
 if not exists(select * from INFORMATION_SCHEMA.COLUMNS where TABLE_SCHEMA = N'a2security' and TABLE_NAME = N'Users' and COLUMN_NAME = N'IsBlocked')
 	alter table a2security.Users add IsBlocked bit constraint DF_UsersIsBlocked default(0);
+go
+-----------------------------------------------
+if not exists(select * from INFORMATION_SCHEMA.COLUMNS where TABLE_SCHEMA = N'a2security' and TABLE_NAME = N'Users' and COLUMN_NAME = N'Theme')
+	alter table a2security.Users add Theme nchar(1) constraint DF_UsersTheme default(N'A') with values;
 go
 ------------------------------------------------
 if not exists(select * from INFORMATION_SCHEMA.COLUMNS where TABLE_SCHEMA = N'a2security' and TABLE_NAME = N'Users' and COLUMN_NAME = N'AuthenticatorKey')

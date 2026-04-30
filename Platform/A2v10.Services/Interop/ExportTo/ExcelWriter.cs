@@ -1,4 +1,4 @@
-﻿// Copyright © 2015-2025 Oleksandr Kukhtin. All rights reserved.
+﻿// Copyright © 2015-2026 Oleksandr Kukhtin. All rights reserved.
 
 using System.IO;
 
@@ -114,6 +114,20 @@ public class ExcelWriter
 					PatternType = PatternValues.Solid,
                     ForegroundColor = new ForegroundColor() { Rgb = "FFEFFCF6" },
                     BackgroundColor = new BackgroundColor() { Indexed = (UInt32Value)64U }
+                }),
+                // index 5 -> Light Red (red)
+                new Fill(new PatternFill()
+                {
+                    PatternType = PatternValues.Solid,
+                    ForegroundColor = new ForegroundColor() { Rgb = "FFFFF4FA" },
+                    BackgroundColor = new BackgroundColor() { Indexed = (UInt32Value)64U }
+                }),
+                // index 6 -> Cyan (cyan)
+                new Fill(new PatternFill()
+                {
+                    PatternType = PatternValues.Solid,
+                    ForegroundColor = new ForegroundColor() { Rgb = "#FFECFDFD" },
+                    BackgroundColor = new BackgroundColor() { Indexed = (UInt32Value)64U }
                 })
             );
 
@@ -213,14 +227,24 @@ public class ExcelWriter
 			cf.ApplyFill = true;
 		}
 
-		if (style.IsGroup)
+		if (style.RowColor != RowColor.None)
 		{
-			cf.FillId = 4; // зеленый
-			cf.ApplyFill = true;
-		}
+            cf.ApplyFill = true;
+			cf.FillId = style.RowColor switch
+			{
+				RowColor.Red => 5, // red
+				RowColor.Cyan => 6, // cyan
+                _ => throw new InvalidOperationException($"Unknown row color: '{style.RowColor}'")
+			};
+        }
+        else if (style.IsGroup) // low priority than RowColor
+        {
+            cf.FillId = 4; // green
+            cf.ApplyFill = true;
+        }
 
-		// align
-		if (style.IsDateOrTime || style.IsBoolean)
+        // align
+        if (style.IsDateOrTime || style.IsBoolean)
 			cf.Alignment.Horizontal = HorizontalAlignmentValues.Center;
 
 		if (style.Wrap)
@@ -296,7 +320,9 @@ public class ExcelWriter
 			if (col.Width != 0)
 			{
 				var w = ConvertUnit(col.Width);
-				columns.Append(new Column() { Min = c + 1, Max = c + 1, BestFit = true, CustomWidth = true, Width = w });
+				columns.Append(new Column() { 
+					Min = c + 1, Max = c + 1, BestFit = true, CustomWidth = true, Width = w,
+				});
 			}
 			else
 				columns.Append(new Column() { Min = c + 1, Max = c + 1, Width = 11.5 }) ;

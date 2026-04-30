@@ -32,7 +32,7 @@ label.checkbox, label.radio {
 			height: @checkbox-size;
 			border: 1px solid @checkbox-brd-color;
 			border-radius: 1px;
-			background-color: white;
+			background-color: var(--bgWhite);
 			background-position: center;
 			background-repeat: no-repeat;
 			align-self: center;
@@ -85,8 +85,19 @@ input[type="checkbox"] {
 	}
 }
 
-input[type="radio"] {
+.dark {
+	input[type="checkbox"] {
+		&:checked + span::before {
+			background-image: data-uri('image/svg+xml','checkbox_checked_dark.svg');
+		}
 
+		&:indeterminate + span::before {
+			background-image: data-uri('image/svg+xml', 'checkbox_indeterminate_dark.svg');
+		}
+	}
+}
+
+input[type="radio"] {
 	&:checked + span::before {
 		background-image: data-uri('image/svg+xml','checkbox_radio.svg');
 	}
@@ -123,7 +134,7 @@ label.like-checkbox {
 			height: @checkbox-size;
 			border: 1px solid @checkbox-brd-color;
 			border-radius: 1px;
-			background-color: white;
+			background-color: var(--bgWhite);
 			background-position: center;
 			background-repeat: no-repeat;
 		}

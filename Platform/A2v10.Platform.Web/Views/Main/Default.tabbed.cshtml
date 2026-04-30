@@ -15,7 +15,8 @@
 }
 
 <div id="shell" class="mdi-shell @(Model!.Debug ? "debug" : "release")" v-cloak>
-	<a2-mdi-header :title="title" person-name="@Model.PersonName" :has-profile="@hasProfile" profile-text="@loc["Profile"]"
+	<a2-mdi-header :title="title" person-name="@Model.PersonName" :has-profile="@hasProfile" profile-text="@loc["Profile"]" enable-dark="@theme.IsDarkThemeEnabled"
+		is-dark="@theme.IsDark"
 		accesskeyprofile-text="@loc["Profile"]" :logo="'@Html.Raw(theme.LogoUrl())'" :has-license="@hasLicense" license-text="@loc["License"]" >
 		@if (Model.HasNavPane)
 		{
@@ -53,9 +54,9 @@
 		</div>
 	</div>
 	<div class="mdi-main">
-		<a2-include :source="homeSource()" :complete="tabLoadComplete" :lock="lockRoute" v-show="isHomeActive()"></a2-include>
+		<a2-include :source="homeSource()" :complete="tabLoadComplete" :lock="lockRoute" :on-error="tabLoadError" v-show="isHomeActive()"></a2-include>
 		<div class="mdi-view" v-for="(t, tx) in tabs" v-show="isTabActive(t)" :key="t.key">
-			<a2-include :source="tabSource(t)" :complete="tabLoadComplete" :lock="lockRoute" :reload="t.reload"></a2-include>
+			<a2-include :source="tabSource(t)" :complete="tabLoadComplete" :lock="lockRoute" :reload="t.reload" :on-error="tabLoadError"></a2-include>
 		</div>
 	</div>
 	<div class="mdi-banner @(isBannerVisible ? "show" : "")">

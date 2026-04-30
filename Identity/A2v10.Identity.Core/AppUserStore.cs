@@ -69,8 +69,9 @@ public sealed class AppUserStore<T>(IDbContext dbContext, IOptions<AppUserStoreO
         public const String ProviderKey = nameof(ProviderKey);
 		public const String TwoFactorEnabled = nameof(TwoFactorEnabled);
 		public const String AuthenticatorKey = nameof(AuthenticatorKey);
+        public const String Theme = nameof(Theme);
 
-	}
+    }
 
     public async Task<IdentityResult> CreateAsync(AppUser<T> user, CancellationToken cancellationToken)
 	{
@@ -185,6 +186,8 @@ public sealed class AppUserStore<T>(IDbContext dbContext, IOptions<AppUserStoreO
 			prm.Add(ParamNames.TwoFactorEnabled, user.TwoFactorEnabled);
 			prm.Add(ParamNames.AuthenticatorKey, user.AuthenticatorKey);
 		}
+		if (user.Flags.HasFlag(UpdateFlags.Theme))
+            prm.Add(ParamNames.Theme, user.Theme);
 
         await _dbContext.ExecuteExpandoAsync(_dataSource, $"[{_dbSchema}].[User.UpdateParts]", prm);
 
@@ -349,7 +352,9 @@ public sealed class AppUserStore<T>(IDbContext dbContext, IOptions<AppUserStoreO
 			list.Add(new Claim(WellKnownClaims.OrganizationTag, user.OrganizationTag));
 		if (user.IsPersistent)
 			list.Add(new Claim(WellKnownClaims.IsPersistent, "true"));
-		if (!String.IsNullOrEmpty(user.Roles))
+		if (user.Theme != null)
+			list.Add(new Claim(WellKnownClaims.Theme, user.Theme));
+        if (!String.IsNullOrEmpty(user.Roles))
 		{
 			list.Add(new Claim(WellKnownClaims.Roles, user.Roles));
 			if (user.Roles.Split(',').Any(x => x == WellKnownClaims.Admin))

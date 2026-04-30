@@ -1,18 +1,16 @@
-﻿// Copyright © 2015-2022 Alex Kukhtin. All rights reserved.
-
-
+﻿// Copyright © 2015-2026 Oleksandr Kukhtin. All rights reserved.
 
 namespace A2v10.Xaml;
 
 [ContentProperty("Content")]
 public class ListItemSimple : UIElement
 {
-	public Object? Content { get; set; }
-	public Icon Icon { get; set; }
-	public Command? Command { get; set; }
+	public Object? Content { get; init; }
+	public Icon Icon { get; init; }
+	public Command? Command { get; init; }
+    public CommandBar? CommandBar { get; init; }
 
-
-	public override void RenderElement(RenderContext context, Action<TagBuilder>? onRender = null)
+    public override void RenderElement(RenderContext context, Action<TagBuilder>? onRender = null)
 	{
 		if (SkipRender(context))
 			return;
@@ -23,7 +21,12 @@ public class ListItemSimple : UIElement
 		div.RenderStart(context);
 		RenderIconBlock(context);
 		RenderBody(context);
-		div.RenderEnd(context);
+        CommandBar?.RenderElement(context, tag =>
+			{
+				tag.AddCssClass("list-item-commands");
+			}
+		);
+        div.RenderEnd(context);
 	}
 
 	Boolean HasBody => GetBinding(nameof(Content)) != null || Content != null;
@@ -58,4 +61,10 @@ public class ListItemSimple : UIElement
 			context.Writer.Write(context.LocalizeCheckApostrophe(Content.ToString()));
 		hBody.RenderEnd(context);
 	}
+
+    protected override void OnEndInit()
+    {
+        base.OnEndInit();
+        CommandBar?.SetParent(this);
+    }
 }

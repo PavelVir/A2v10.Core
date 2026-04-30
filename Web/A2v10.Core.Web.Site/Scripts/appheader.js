@@ -47,6 +47,8 @@
 			hasLicense: Boolean,
 			profileText: String,
 			licenseText: String,
+			enableDark: Boolean,
+			isDark: Boolean,
 			logo: String
 		},
 		computed: {
@@ -64,6 +66,11 @@
 			license() {
 				const dlgData = { promise: null, rd: true, raw: true };
 				eventBus.$emit('modal', '/viewlicense', dlgData);
+			},
+			async setTheme(theme) {
+				let res = await fetch(`/account/darkmode?theme=${theme}`, { method: 'POST' });
+				if (res.ok)
+					window.location.reload();
 			}
 		},
 		mounted() {

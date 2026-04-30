@@ -12,6 +12,10 @@ html {
 	height: 100%;
 	width: 100%;
 	caret-color: transparent;
+
+	&.dark {
+		color-scheme:dark;
+	}
 }
 
 *[contenteditable="true"] {
@@ -339,7 +343,7 @@ pre.a2-code {
 
 	.stack-trace {
 		border-top: 1px solid @danger-txt-color;
-		background-color: lighten(@danger-bg-color, 5%);
+		background-color: @danger-bg-color;
 		overflow: auto;
 		padding: 10px;
 		max-height: 200px;

@@ -80,7 +80,7 @@
 @navbar-bg-color: var(--neutralBk);
 
 @progress-bar-height:4px;
-@progress-bar-color: gold;
+@progress-bar-color: var(--progress-bar-color);
 @progress-bar-bk-color: var(--neutral400);
 
 @sidebar-tab-height: 42px;
@@ -162,12 +162,13 @@
 
 @cyan-bg: #edfcfe;
 
-@danger-txt-color: #a94442;
-@danger-bg-color: #f2dede;
-@danger-brd-color: darken(@danger-bg-color, 15%);
+@danger-txt-color: var(--danger-base);
+@danger-bg-color: var(--invalid-bg);
+@danger-brd-color: var(--danger-base);
+@danger-bg-ctrl: var(--invalid-ctrl);
 @danger-shadow-color: rgba(169,68,66,0.3);
 
-@danger-btn-color: lighten(@danger-txt-color, 5%);
+@danger-btn-color: var(--invalid-bg);
 
 @pane-def-txt: #999;
 @pane-def-bg: var(--neutralBk);
@@ -201,8 +202,7 @@
 @arrow-size: 9px;
 @arrow-gap: 6px;
 
-@dropdown-shadow: 3px 3px 10px 0 rgba(174, 174, 174, .5), 0 5px 40px 0 rgba(0, 0, 0, .15);
-
+@dropdown-shadow: var(--menu-shadow);
 
 // marker 
 @mark-danger-bg-color: rgba(254, 220, 220, 0.25);

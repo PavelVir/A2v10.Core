@@ -1,4 +1,4 @@
-﻿// Copyright © 2015-2023 Oleksandr Kukhtin. All rights reserved.
+﻿// Copyright © 2015-2026 Oleksandr Kukhtin. All rights reserved.
 
 using System;
 
@@ -10,4 +10,8 @@ public interface IApplicationTheme
 	String LogoUrl();
 
 	String BodyCssClass { get; }
+    String HtmlCssClass { get; }
+
+    Boolean IsDarkThemeEnabled { get; }
+    Boolean IsDark { get; }
 }

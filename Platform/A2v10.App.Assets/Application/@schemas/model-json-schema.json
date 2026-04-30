@@ -1,6 +1,7 @@
 ﻿{
 	"$schema": "http://json-schema.org/draft-04/schema",
-	"$version": "10.0.7974",
+	"$version": "10.0.7989",
+	"$date": "2026-04-07",
 	"title": "JSON Schema for model.json",
 	"type": "object",
 
@@ -45,6 +46,7 @@
 		"source": {
 			"type": "string"
 		},
+		"description": {"type": "string"},
 		"model": { "type": "string" },
 		"schema": { "type": "string" },
 		"module": { "type": "string" },
@@ -324,7 +326,7 @@
 						},
 						"parse": {
 							"type": "string",
-							"enum": [ "excel", "xlsx", "csv", "dbf", "xml", "auto", "json" ]
+							"enum": [ "excel", "xlsx", "xls", "csv", "dbf", "xml", "auto", "json" ]
 						},
 						"commandTimeout": { "type": "number" },
 						"async": { "type": "boolean" },

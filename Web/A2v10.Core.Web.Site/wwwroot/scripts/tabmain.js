@@ -1696,9 +1696,9 @@ app.modules['std:period'] = function () {
 };
 
 
-// Copyright © 2015-2025 Oleksandr Kukhtin. All rights reserved.
+// Copyright © 2015-2026 Oleksandr Kukhtin. All rights reserved.
 
-// 20250627-7982
+// 20260406-7988
 /* services/modelinfo.js */
 
 app.modules['std:modelInfo'] = function () {
@@ -1817,7 +1817,7 @@ app.modules['std:modelInfo'] = function () {
 	function findRootModelInfo() {
 		for (let p in this._meta_.props) {
 			let x = this[p];
-			if (x.$ModelInfo)
+			if (x && x.$ModelInfo)
 				return x.$ModelInfo;
 		}
 		return null;
@@ -5132,9 +5132,9 @@ app.modules['std:barcode'] = function () {
 	}
 };
 
-// Copyright © 2015-2024 Oleksandr Kukhtin. All rights reserved.
+// Copyright © 2015-2026 Oleksandr Kukhtin. All rights reserved.
 
-// 20241119-7972
+// 20260407-7978
 /*components/includeplain.js*/
 
 (function () {
@@ -5279,7 +5279,8 @@ app.modules['std:barcode'] = function () {
 			dat: undefined,
 			complete: Function,
 			lock: Boolean,
-			reload: Number
+			reload: Number,
+			onError: Function
 		},
 		data() {
 			return {
@@ -5303,7 +5304,10 @@ app.modules['std:barcode'] = function () {
 			error(msg) {
 				if (msg instanceof Error)
 					msg = msg.message;
-				alert(msg);
+				if (this.onError)
+					this.onError(this.source, msg);
+				else
+					alert(msg);
 			},
 			makeUrl() {
 				let arg = this.arg || '';
@@ -8662,31 +8666,18 @@ Vue.component('validator-control', {
 		}
 	});
 })();
-// Copyright © 2015-2020 Oleksandr Kukhtin. All rights reserved.
+// Copyright © 2015-2026 Oleksandr Kukhtin. All rights reserved.
 
-// 20200625-7676
+// 20260407-7683
 /*components/pager.js*/
 
 
 (function () {
 
-/*
-template: `
-<div class="pager">
-	<a href @click.prevent="source.first" :disabled="disabledFirst"><i class="ico ico-chevron-left-end"/></a>
-	<a href @click.prevent="source.prev" :disabled="disabledPrev"><i class="ico ico-chevron-left"/></a>
-
-	<a href v-for="b in middleButtons " @click.prevent="page(b)"><span v-text="b"></span></a>
-
-	<a href @click.prevent="source.next"><i class="ico ico-chevron-right"/></a>
-	<a href @click.prevent="source.last"><i class="ico ico-chevron-right-end"/></a>
-	<code>pager source: offset={{source.offset}}, pageSize={{source.pageSize}},
-		pages={{source.pages}} count={{source.sourceCount}}</code>
-</div>
-*/
-
 	const locale = window.$$locale;
 	const eventBus = require('std:eventBus');
+
+	const fmt = new Intl.NumberFormat('uk-UA').format;
 
 	Vue.component('a2-pager', {
 		props: {
@@ -8713,11 +8704,11 @@ template: `
 				let lastNo = Math.min(this.count, this.offset + this.source.pageSize);
 				if (this.templateText)
 					return this.templateText
-						.replace(/\#\[Start\]/g, this.offset + 1)
-						.replace(/\#\[End\]/g, lastNo)
-						.replace(/\#\[Count\]/g, this.count);
+						.replace(/\#\[Start\]/g, fmt(this.offset + 1))
+						.replace(/\#\[End\]/g, fmt(lastNo))
+						.replace(/\#\[Count\]/g, fmt(this.count));
 				else
-					return `${locale.$PagerElements}: <b>${this.offset + 1}</b>-<b>${lastNo}</b> ${locale.$Of} <b>${this.count}</b>`;
+					return `${locale.$PagerElements}: <b>${fmt(this.offset + 1)}</b>-<b>${fmt(lastNo)}</b> ${locale.$Of} <b>${fmt(this.count)}</b>`;
 			},
 			offset() {
 				return +this.source.offset;
@@ -14307,6 +14298,18 @@ Vue.directive('resize', {
 			$msg(msg, title, style) {
 				let prms = { message: msg, title: title || locale.$Message, style: style || 'info' };
 				return this.$confirm(prms);
+			},
+
+			$handleClick(name, ev) {
+				ev.preventDefault();
+				ev.stopPropagation();
+				let tml = this.$data.$template;
+				if (!tml) return;
+				let cmd = tml.delegates;
+				if (!cmd) return;
+				let func = cmd[name];
+				if (!func) return;
+				func.call(this.$data, ev.target, name);
 			},
 
 			$alert(msg, title, list) {
