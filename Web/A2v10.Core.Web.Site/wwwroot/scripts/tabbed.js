@@ -63,8 +63,13 @@ app.modules['std:signalR'] = function () {
 					<i class="ico ico-policy"></i>
 					<span v-text="licenseText"></span>
 				</button>
+				<button @click=changePassword tabindex="-1" class="dropdown-item">
+					<i class="ico ico-access"></i>
+					<span v-text="locale.$ChangePassword"></span>
+				</button>
+				<div class="divider"></div>
 				<button @click=logout tabindex="-1" class="dropdown-item">
-					<i class="ico ico-logout"></i> 
+					<i class="ico ico-logout"></i>
 					<span v-text="locale.$Quit"></span>
 				</button>
 			</div>
@@ -96,6 +101,18 @@ app.modules['std:signalR'] = function () {
 			license() {
 				const dlgData = { promise: null, rd: true, raw: true };
 				eventBus.$emit('modal', '/viewlicense', dlgData);
+			},
+			changePassword() {
+				const dlgData = {
+					promise: null, data: { Id: -1 }
+				};
+				eventBus.$emit('modal', '/app/changePassword', dlgData);
+				dlgData.promise.then(function (result) {
+					if (result === false) return;
+					eventBus.$emit('toast', {
+						text: locale.$ChangePasswordSuccess, style: 'success'
+					});
+				});
 			}
 		},
 		mounted() {
