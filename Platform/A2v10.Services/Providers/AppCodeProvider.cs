@@ -1,4 +1,4 @@
-﻿// Copyright © 2015-2025 Oleksandr Kukhtin. All rights reserved.
+﻿// Copyright © 2015-2026 Oleksandr Kukhtin. All rights reserved.
 
 using System.IO;
 using System.Reflection;
@@ -37,7 +37,9 @@ public class AppCodeProvider : IAppCodeProvider
 
     IAppCodeProviderImpl CreateProvider(String path)
 	{
-		if (ClrHelpers.IsClrPath(path))
+		if (path == "null:")
+			return new InternalNullCodeProvider();
+		else if (ClrHelpers.IsClrPath(path))
 			return new InternalAppCodeProviderClr(CreateContainer(path));
 		else
 			return new InternalAppCodeProviderFile(path);
@@ -47,7 +49,7 @@ public class AppCodeProvider : IAppCodeProvider
 	{
 		var assembly = ClrHelpers.ParseClrType(path);
 		var container = Activator.CreateInstance(assembly.assembly, assembly.type, false, BindingFlags.Default, null, 
-				new Object?[] { /*_serviceProvider*/ }, null, null)?.Unwrap();
+				[], null, null)?.Unwrap();
 		if (container is IAppContainer appContainer)
 			return appContainer;
 		else
@@ -59,7 +61,9 @@ public class AppCodeProvider : IAppCodeProvider
 		if (!path.StartsWith('$'))
 			return _providers[DEFAULT_PROVIDER];
 		var fx = path.IndexOf('/');
-		var key = path[1..fx];
+		if (fx == -1)
+            throw new InvalidOperationException($"Invalid path '{path}'");
+        var key = path[1..fx];
 		if (_providers.TryGetValue(key, out var proivder))
 			return proivder;
 		throw new InvalidOperationException($"Module '{key}' not found");
@@ -150,8 +154,11 @@ public class AppCodeProvider : IAppCodeProvider
 
     public String GetMainModuleFullPath(String path, String fileName)
     {
-		var pathToGet = MakePath(path, fileName);	
-        return GetProvider(path).NormalizePath(pathToGet);
+		var pathToGet = MakePath(path, fileName);
+		var provider = GetProvider(path);
+		if (!provider.IsFileSystem)
+			return String.Empty;
+		return provider.NormalizePath(pathToGet);
     }
 }
 

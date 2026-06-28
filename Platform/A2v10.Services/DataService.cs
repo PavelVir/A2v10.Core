@@ -49,9 +49,9 @@ public class SaveResult : ISaveResult
 }
 public partial class DataService(IServiceProvider _serviceProvider, IModelJsonReader _modelReader, IDbContext _dbContext, ICurrentUser _currentUser,
     ISqlQueryTextProvider _sqlQueryTextProvider, IAppCodeProvider _codeProvider, IConfiguration _configuration,
-    IExternalDataProvider _externalDataProvider, ILocalizer _localizer, IAppRuntimeBuilder _appRuntimeBuilder) : IDataService
+    IExternalDataProvider _externalDataProvider, ILocalizer _localizer, IAppRuntimeBuilder _appRuntimeBuilder,
+    IAppClrManager? _appClrManager = null) : IDataService
 {
-	private readonly IAppClrManager? _appClrManager = _serviceProvider.GetService<IAppClrManager>(); // may be null!
     static PlatformUrl CreatePlatformUrl(UrlKind kind, String baseUrl)
 	{
 		return new PlatformUrl(kind, baseUrl, null);
@@ -158,14 +158,21 @@ public partial class DataService(IServiceProvider _serviceProvider, IModelJsonRe
 
 	async Task<IDataLoadResult> Load(PlatformUrl platformUrl, Action<ExpandoObject> setParams, Boolean isReload = false)
 	{
-		var view = await LoadViewAsync(platformUrl);
+		if (platformUrl.Action == "_auxmenu")
+		{
+			var auxMenuHandler = _serviceProvider.GetRequiredKeyedService<IEndpointHandler>("AuxMenu");
+            var res = await auxMenuHandler.RenderResultAsync(platformUrl, new ModelJsonView(), []);
+            return new DataLoadResult(null, null, res);
+        }
+
+        var view = await LoadViewAsync(platformUrl);
 
 		CheckPermissions(view);
 
         if (view.HasMetadata)
 		{
 			var result = await _appRuntimeBuilder.RenderAsync(platformUrl, view, isReload);
-			return new DataLoadResult(result.DataModel, null, result.ActionResult);
+			return new DataLoadResult(result.DataModel, view, result.ActionResult);
 		}
 		else if (!String.IsNullOrEmpty(view.EndpointHandler))
 		{
@@ -426,9 +433,7 @@ public partial class DataService(IServiceProvider _serviceProvider, IModelJsonRe
 		var cmd = await _modelReader.GetCommandAsync(platformBaseUrl, command);
 
         if (cmd.HasMetadata)
-        {
             return await _appRuntimeBuilder.InvokeAsync(platformBaseUrl, command, cmd, data);
-        }
 
         CheckPermissions(cmd);
 

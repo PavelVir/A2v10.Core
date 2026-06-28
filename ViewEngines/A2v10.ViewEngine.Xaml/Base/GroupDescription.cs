@@ -4,6 +4,7 @@ using System.Linq;
 using System.Collections.Generic;
 using System.Globalization;
 using System.ComponentModel;
+using System.Collections;
 
 using A2v10.Infrastructure;
 
@@ -31,6 +32,9 @@ public class GroupDescription : XamlElement, IJavaScriptSource
 
 		return $$"""{{{String.Join(',', props())}}}""";
 	}
+
+    public static implicit operator GroupDescription(String groupBy) =>
+		new() { GroupBy = groupBy };
 }
 
 public class GroupDescriptionItems : List<GroupDescription>
@@ -39,12 +43,23 @@ public class GroupDescriptionItems : List<GroupDescription>
 
 [ContentProperty("Items")]
 [TypeConverter(typeof(GroupDescriptionsConverter))]
-public class GroupDescriptions : IJavaScriptSource
+public class GroupDescriptions : IJavaScriptSource, IEnumerable<GroupDescription>
 {
-	public List<GroupDescription> Items { get; set; } = [];
+    public List<GroupDescription> Items { get; set; } = [];
 	public String? GetJsValue(RenderContext context) => 
 		Items.Count > 0 ? $"""[{String.Join(',', Items.Select(x => x.GetJsValue(context)))}]""" : null;
 
+    public static GroupDescriptions FromStrings(params  String[] groupBy)
+	{
+		var gd = new GroupDescriptions();
+		foreach (var s in groupBy)
+			gd.Items.Add(new GroupDescription() { GroupBy = s, Count = true });
+		return gd;
+	}
+
+    public IEnumerator<GroupDescription> GetEnumerator() => Items.GetEnumerator();
+    IEnumerator IEnumerable.GetEnumerator() => Items.GetEnumerator();
+    public void Add(String groupBy) => Items.Add(new GroupDescription { GroupBy = groupBy });
 }
 
 internal class GroupDescriptionsConverter : TypeConverter

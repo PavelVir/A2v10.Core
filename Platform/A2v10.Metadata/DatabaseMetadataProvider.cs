@@ -7,23 +7,67 @@ using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
 
+using Microsoft.Extensions.Options;
+
 using Newtonsoft.Json;
 
 using A2v10.Data.Interfaces;
 using A2v10.Infrastructure;
 using A2v10.Xaml;
+using System.Security.Cryptography;
+using System.Text;
 
 namespace A2v10.Metadata;
 
 public class DatabaseMetadataProvider(DatabaseMetadataCache _metadataCache, IDbContext _dbContext, IAppCodeProvider _codeProvider)
 {
-    public Task<TableMetadata> GetSchemaAsync(IModelBaseMeta meta, String? dataSource)
+    public async Task<TableMetadata> GetSchemaAsync(IModelBaseMeta meta, String? dataSource)
     {
-        return _metadataCache.GetOrAddAsync(dataSource, meta.CurrentSchema, meta.CurrentTable, LoadTableMetadataAsync);
+        var loaded = await _metadataCache.GetOrAddAsync(dataSource, meta.CurrentSchema, meta.CurrentTable, LoadTableMetadataAsync);
+        if (!String.IsNullOrEmpty(meta.CurrentTable))
+            loaded.Storage = GetDefaultStorage(loaded, meta.CurrentSchema);
+        var storage = await ResolveStorageAsync(loaded, dataSource);
+        if (storage != null)
+        {
+            storage.Origin = loaded;
+            loaded = storage;
+        }
+        await ResolveReferencesAsyns(loaded, dataSource);
+        loaded.SetDefaults(meta.CurrentSchema, meta.CurrentTable);
+        return loaded;
     }
-    public Task<TableMetadata> GetSchemaAsync(String? dataSource, String schema, String table)
+    public async Task<TableMetadata> GetSchemaAsync(String? dataSource, String schema, String table)
     {
-        return _metadataCache.GetOrAddAsync(dataSource, schema, table, LoadTableMetadataAsync);
+        var loaded = await _metadataCache.GetOrAddAsync(dataSource, schema, table, LoadTableMetadataAsync);
+        if (!String.IsNullOrEmpty(table))
+            loaded.Storage = GetDefaultStorage(loaded, schema);
+        var storage = await ResolveStorageAsync(loaded, dataSource);
+        if (storage != null)
+        {
+            storage.Origin = loaded;
+            loaded = storage;
+        }
+        await ResolveReferencesAsyns(loaded, dataSource);
+        loaded.SetDefaults(schema, table);
+        return loaded;
+    }
+
+    String? GetDefaultStorage(TableMetadata table, String schema)
+    {
+        if (String.IsNullOrEmpty(table.Storage) && schema == Constants.SchemaNames.Document)
+            return Constants.SchemaNames.Document;
+        return table.Storage;
+    }
+
+    public async Task<TableMetadata?> ResolveStorageAsync(TableMetadata table, String? dataSource)
+    {
+        if (!String.IsNullOrEmpty(table.Storage))
+        {
+            var (storageSchema, storageTable) = ParsePath(table.Storage);
+            return await GetSchemaAsync(dataSource, storageSchema, storageTable)
+                ?? throw new InvalidOperationException($"Parent Table {table.Storage} not found");
+        }
+        return null;
     }
 
     public Task<AppMetadata> GetAppMetadataAsync(String? dataSource)
@@ -45,37 +89,9 @@ public class DatabaseMetadataProvider(DatabaseMetadataCache _metadataCache, IDbC
             throw new InvalidOperationException("GetModelInfo fails");
         return modelTableInfo;
     }
-
-    public void RemoveFormFromCache(String? dataSource, String schema, String table, String key)
-    {
-        _metadataCache.RemoveFormFromCache(dataSource, schema, table, key);
-    }
-    public Task<FormMetadata> GetFormAsync(String? dataSource, TableMetadata meta, String key, Func<Form> defForm)
-    {
-        return _metadataCache.GetOrAddFormAsync(dataSource, meta, key, LoadTableFormAsync, defForm);
-    }
     public Task<UIElement> GetXamlFormAsync(String? dataSource, TableMetadata meta, String key, Func<UIElement> defForm)
     {
         return _metadataCache.GetOrAddXamlFormAsync(dataSource, meta, key, defForm);
-    }
-
-    public async Task<IEnumerable<ReferenceMember>> ReferenceFieldsAsync(String? dataSource, TableMetadata table)
-    {
-        async Task<ReferenceMember> CreateMember(TableColumn column, Int32 index)
-        {
-            var targetPath = ParsePath(column.Target);
-            var table = column.Type switch
-            {
-                ColumnType.Operation => await GetSchemaAsync(dataSource, "op", "operations"),
-                _ => await GetSchemaAsync(dataSource, targetPath.schema, targetPath.table)
-            };
-            return new ReferenceMember(column, table, index);
-        }
-        Int32 index = 0;
-        var list = new List<ReferenceMember>();
-        foreach (var cx in table.Columns.Where(c => c.Type == ColumnType.Ref))
-            list.Add(await CreateMember(cx, index++));
-        return list;
     }
 
     public static IEnumerable<ReferenceMember> EnumFields(TableMetadata table, Boolean withDetails)
@@ -88,7 +104,7 @@ public class DatabaseMetadataProvider(DatabaseMetadataCache _metadataCache, IDbC
         foreach (var cx in table.Columns.Where(c => c.IsEnum))
             list.Add(CreateMember(cx, index++));
         if (withDetails)
-            foreach (var dt in table.Details)
+            foreach (var dt in table.Details.Select(x => x.Value))
                 foreach (var ct in dt.Columns.Where(c => c.IsEnum))
                     list.Add(CreateMember(ct, index++));
         return list;
@@ -111,15 +127,17 @@ public class DatabaseMetadataProvider(DatabaseMetadataCache _metadataCache, IDbC
         var fileName = Path.Combine(schema, table, "metadata.json");
         using var stream = _codeProvider.FileStreamRO(fileName);
         var text = "{}"; // empty value;
+        String? hash = null;
         if (stream != null)
         {
             using var sr = new StreamReader(stream);
             text = await sr.ReadToEndAsync()
                 ?? throw new InvalidOperationException($"{fileName} is empty");
+            hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(text))).ToLowerInvariant();
         }
         var meta = JsonConvert.DeserializeObject<TableMetadata>(text, JsonSettings.CamelCaseSerializerSettings)
             ?? throw new InvalidOperationException("TableMetadata deserialization fails");
-        meta.SetDefaults(schema, table);
+        meta.FileHash = hash;
         return meta;
     }
 
@@ -150,41 +168,43 @@ public class DatabaseMetadataProvider(DatabaseMetadataCache _metadataCache, IDbC
         return meta;
     }
 
-    private async Task<FormMetadata> LoadTableFormAsync(String? dataSource, TableMetadata meta, String key, Func<Form> getDefaultForm)
-    {
-        var prms = new ExpandoObject()
-        {
-            {"Schema", meta.Schema},
-            {"Table", meta.Name},
-            {"Key", key},
-        };
-        var dm = await _dbContext.LoadModelAsync(dataSource, "a2meta.[Table.Form]", prms)
-            ?? throw new InvalidOperationException("Form is null");
 
-        var formExpando = dm.Eval<ExpandoObject>("Form.Json");
-        if (formExpando == null)
-        {
-            var defaultForm = getDefaultForm();
-            return new FormMetadata(defaultForm, String.Empty);
-        }
-
-        // convert Expando to Form
-        var json = JsonConvert.SerializeObject(formExpando) 
-            ?? throw new InvalidOperationException("Form not found");
-        var form = JsonConvert.DeserializeObject<Form>(json, JsonSettings.IgnoreNull)
-            ?? throw new InvalidOperationException("Form deserialization fails");
-
-        return new FormMetadata(form, String.Empty);
-
-    }
-
-
-
-    private static (String schema, String table) ParsePath(String path)
+    internal static (String schema, String table) ParsePath(String path)
     {
         var split = path.ToLowerInvariant().Split('/');
+        if (split.Length == 1)
+            return (split[0], String.Empty);
         if (split.Length < 2 )
             throw new InvalidOperationException($"Invalid path: {path}");
         return (split[0], split[1]);
     }
+
+    public async Task ResolveReferencesAsyns(TableMetadata meta, String? dataSource)
+    {
+        IEnumerable<TableColumn> GetAllReferences(TableMetadata table)
+        {
+            return table.Columns.Where(c => c.IsRef)
+                .Concat(table.Details.Values.SelectMany(GetAllReferences));
+        }
+
+        var allRefs = GetAllReferences(meta).GroupBy(x => x.Target);
+
+        foreach (var group in allRefs)
+        {
+            var column = group.First();
+            foreach (var gcol in group) {
+
+                if (gcol.Type == ColumnType.Parent)
+                {
+                    gcol.RefTable = meta; // self!
+                    continue;
+                }
+            }
+            var (schema, table) = ParsePath(column.Target);
+            var refMeta = await GetSchemaAsync(dataSource, schema, table);
+            foreach (var gcol in group)
+                gcol.RefTable = refMeta;
+        }
+    }
+
 }

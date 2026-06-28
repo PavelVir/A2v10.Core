@@ -1,77 +1,53 @@
-﻿// Copyright © 2025 Oleksandr Kukhtin. All rights reserved.
+﻿// Copyright © 2025-2026 Oleksandr Kukhtin. All rights reserved.
 
-using A2v10.Infrastructure;
-using A2v10.Services;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+
+using A2v10.Infrastructure;
+using A2v10.Services;
 
 namespace A2v10.Metadata;
 
 internal static class MetadataExtensions
 {
-    internal static String ToFolder(this String schema)
-    {
-        return schema switch
-        {
-            "cat" => "catalog",
-            "doc" => "document",
-            "jrn" => "journal",
-            "op" => "operation",
-            "rep" => "report",
-            "acc" => "account",
-            "regi" => "inforegister",
-            _ => schema
-        };
-    }
-
     internal static EndpointKind ToEndpointKind(this String schema)
     {
         return schema switch
         {
-            "catalog"  => EndpointKind.Catalog,
-            "document" => EndpointKind.Document,
-            "journal"  => EndpointKind.Journal,
+            Constants.SchemaNames.Catalog => EndpointKind.Catalog,
+            Constants.SchemaNames.Document => EndpointKind.Document,
+            Constants.SchemaNames.Journal => EndpointKind.Journal,
+            "operation" => EndpointKind.Operation,
             _ => throw new InvalidOperationException($"Invalid schema for EndpointKind {schema}")
         };
     }
 
-    internal static String FromFolder(this String folder)
+    internal static String ToSqlSchema(this String folder)
     {
         return folder switch
         {
-            "catalog" => "cat",
-            "document" => "doc",
+            Constants.SchemaNames.Catalog => "cat",
+            Constants.SchemaNames.Document => "doc",
             "operation" => "op",
-            "journal" => "jrn",
+            Constants.SchemaNames.Journal => "jrn",
             "report" => "rep",
             "account" => "acc",
             "inforegister" => "regi",
             _ => folder
         };
     }
-    internal static String EndpointPath(this ColumnReference refs)
-    {
-        return $"/{refs.RefSchema.ToFolder()}/{refs.RefTable}".ToLowerInvariant();
-    }
-
-    internal static Boolean IsEmpty(this ColumnReference? refs)
-    {
-        if (refs == null) return true;
-        if (String.IsNullOrEmpty(refs.RefTable)) return true;
-        return false;
-    }
 
     internal static String EndpointPath(this TableMetadata table)
     {
-        return $"/{table.Schema.ToFolder()}/{table.Name}".ToLowerInvariant();
+        return $"/{table.Schema}/{table.Model}".ToLowerInvariant();
     }
 
     internal static String EndpointPathUseBase(this TableMetadata table, TableMetadata? baseTable)
     {
         if (baseTable != null)
-            return baseTable.EndpointPath();
-        return table.EndpointPath();
+            return baseTable.Path;
+        return table.Path;
     }
 
     public static IPlatformUrl PlatformUrl(this TableMetadata table, String action)
@@ -91,32 +67,6 @@ internal static class MetadataExtensions
         return editEndpoint;
     }
 
-    internal static Boolean HasPeriod(this TableMetadata table)
-    {
-        return table.IsDocument || table.IsJournal;
-    }
-
-    internal static String LocalPath(this TableMetadata table, String action)
-    {
-        action = action.ToLowerInvariant();
-        var path = $"{table.Schema.ToFolder()}/{table.Name}".ToLowerInvariant();
-
-        String CreateEditPath()
-        {
-            var prefix = table.EditWith == EditWithMode.Page ? "/_page" : "/_dialog";
-            return $"{prefix}/{path}/{action}/new";
-        }
-
-        return action.ToLowerInvariant() switch
-        {
-            "index" => $"/_page/{path}/{action}/new",
-            "browse" or "browsefolder" or "editfolder" => $"/_dialog/{path}/{action}/new",
-            "edit" => CreateEditPath(),
-            _ => throw new NotSupportedException($"Invalid Action ({action})")
-        };
-    }
-
-
     internal static IEnumerable<ReportItemMetadata> TypedReportItems(this TableMetadata table, ReportItemKind kind)
     {
         return table.ReportItems.Where(ri => ri.Kind == kind).OrderBy(r => r.Order);
@@ -124,11 +74,11 @@ internal static class MetadataExtensions
 
     internal static String Endpoint(this ReportItemMetadata item)
     {
-        return $"/{item.RealRefSchema.ToFolder()}/{item.RealRefTable}";
+        return $"/{item.RealRefSchema}/{item.RealRefTable}";
     }
-    internal static String CreateField(this ReportItemMetadata item, ColumnType idDataType, String? prefix = null)
+    internal static String CreateField(this ReportItemMetadata item, String? prefix = null)
     {
-        return $"[{prefix}{item.Column}] {item.DataType.ToSqlDataType(idDataType)}";
+        return $"[{prefix}{item.Column}] {item.DataType.ToSqlDataType()}";
     }
 
     internal static TableMetadata CreateEnumMeta(TableColumn col)
@@ -136,7 +86,7 @@ internal static class MetadataExtensions
         return new TableMetadata()
         {
             //Schema = col.Reference.RefSchema,
-            Name = col.Reference.RefTable,
+            Table = col.Reference.RefTable,
             /*
             Columns = [
                 new TableColumn()
@@ -158,56 +108,17 @@ internal static class MetadataExtensions
         };
     }
 
-    internal static ReferenceMember? FindRefMember(this IEnumerable<ReferenceMember> refs, TableColumn column)
-    {
-        if (column.Reference.IsEmpty())
-            return null;
-        var rm = refs.FirstOrDefault(r =>  r.Table.Schema == column.Reference.RefSchema && r.Table.Name == column.Reference.RefTable);
-        return rm;
-    }
+    internal static IEnumerable<TableColumn> AllColumns(this TableMetadata table, Func<TableColumn, Boolean>? predicate = null) =>
+        table.DefaultColumns().Concat(table.Columns).Where(predicate ?? (_ => true));
 
-    internal static IEnumerable<TableMetadata> RefTables (this IEnumerable<ReferenceMember> refs, String? exclude = null)
-    {
-        var res = refs.GroupBy(r => r.Table.SqlTableName).Select(g => g.First().Table);
-        if (exclude != null)
-            res = res.Where(t => t.RealTypeName != exclude);
-        return res;
-    }
+    internal static IEnumerable<RefDescriptor> AllRefs(this IEnumerable<TableColumn> columns) =>
+        columns.Where(c => c.IsRef).Select((c, ix) => new RefDescriptor(ix + 1, c, c.RefTable
+            ?? throw new InvalidOperationException($"RefTable for {c.Name} is null")));
 
-    internal static IEnumerable<TableColumn> DefaultColumns(this TableMetadata table)
-    {
-        return table.Kind switch
-        {
-            EndpointKind.Catalog => CatalogDefaultColumns(table),
-            _ => throw new InvalidOperationException($"Default columns not defined for {table.Name}")
-        };
-    }
+    internal static FormMetadata IndexForm(this TableMetadata table) =>
+        table.Forms.First(x => x.Key == Constants.FormNames.Index).Value;
 
-    static IEnumerable<TableColumn> CatalogDefaultColumns(TableMetadata table)
-    {
-        yield return new TableColumn()
-        {
-            Name = Constants.FieldNames.Name,
-            Type = ColumnType.String,
-            MaxLength = 255,
-            Role = TableColumnRole.Name
-        };
-        yield return new TableColumn()
-        {
-            Name = Constants.FieldNames.Memo,
-            MaxLength = 255,
-            Type = ColumnType.String,
-        };
-    }
-    static IEnumerable<TableColumn> DocumentDefaultColumns(TableMetadata table)
-    {
-        yield return new TableColumn()
-        {
-            Name = Constants.FieldNames.Date,
-        };
-        yield return new TableColumn()
-        {
-            Name = Constants.FieldNames.Memo
-        };
-    }
+    internal static FormMetadata EditForm(this TableMetadata table) =>
+        table.Forms.First(x => x.Key == Constants.FormNames.Edit).Value;
+
 }

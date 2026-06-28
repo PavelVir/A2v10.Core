@@ -56,7 +56,7 @@ internal class TurnoverReportBuilder(IServiceProvider serviceProvider, TableMeta
         {
             var refMeta = await _metadataProvider.GetSchemaAsync(dataSource, f.RealRefSchema, f.RealRefTable);
             filterMaps.AppendLine($"""
-                select [!T{f.Column}!Map] = null, [Id!!Id] = [{refMeta.PrimaryKeyField}], [Name!!Name] = [{refMeta.NameField}]
+                select [!T{f.Column}!Map] = null, [Id!!Id] = [{refMeta.PrimaryKeyField}], [Name!!Name] = [Name]
                 from {f.RealRefSchema}.[{f.RealRefTable}]
                 where [{refMeta.PrimaryKeyField}] = @{f.Column}
             """);
@@ -65,12 +65,12 @@ internal class TurnoverReportBuilder(IServiceProvider serviceProvider, TableMeta
         IEnumerable<String> createTempTableFeilds()
         {
             foreach (var f in _grouping.Filters.Union(_grouping.Grouping).Distinct(Comparers.ReportItemMetadata))
-                yield return f.CreateField(appMeta.IdDataType);
+                yield return f.CreateField();
             foreach (var f in _grouping.Data)
             {
-                yield return f.CreateField(appMeta.IdDataType, "Start");
-                yield return f.CreateField(appMeta.IdDataType, "In");
-                yield return f.CreateField(appMeta.IdDataType, "Out");
+                yield return f.CreateField("Start");
+                yield return f.CreateField("In");
+                yield return f.CreateField("Out");
             }
         }
 

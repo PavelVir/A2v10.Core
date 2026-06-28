@@ -41,7 +41,7 @@ internal class EndpointGenerator(IModelBuilderFactory _modelBuilderFactory, IApp
             Schema = table.Schema,
             Meta = new DatabaseMetaD()
             {
-                Table = table.Name
+                Table = table.Table
             },
             Actions = new Dictionary<String, ModelJsonViewD>() {
                 { "index", new ModelJsonViewD()
@@ -128,19 +128,23 @@ internal class EndpointGenerator(IModelBuilderFactory _modelBuilderFactory, IApp
 
     private async Task<CreatedFile> GenerateFormAsync(TableMetadata table, IPlatformUrl platformUrl, Boolean formOnly = false)
     {
+        
         var fileType = platformUrl.Kind == UrlKind.Dialog ? "dialog" : "view";
-        var fileName = $"{platformUrl.Action}.{fileType}.xaml";
+        var fileName = $"{platformUrl.Action}.{fileType}.vxaml";
         var fullPath = _appCodeProvider.GetMainModuleFullPath(platformUrl.LocalPath.RemoveHeadSlash(), fileName);
         var filePath = Path.Combine(fullPath, fileName);
 
-        var builder = await _modelBuilderFactory.BuildAsync(platformUrl, table, null);
+        var builder = _modelBuilderFactory.BuildEndpoint(platformUrl, table, null);
 
         if (!File.Exists(fullPath))
         {
+            throw new InvalidOperationException("Що тут робити?");
+            /*
             var formIndex = await builder.GetFormAsync();
             var pageIndex = XamlBulder.BuildForm(formIndex.Form);
             var pageXaml = XamlBulder.GetXaml(pageIndex);
             await WriteFileAsync(fullPath, pageXaml);
+            */
         }
 
         if (formOnly)

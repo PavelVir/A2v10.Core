@@ -2,8 +2,11 @@
 
 using System;
 using System.Collections.Concurrent;
+using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
+
+using Microsoft.Extensions.Options;
 
 using A2v10.Infrastructure;
 using A2v10.Xaml;
@@ -16,24 +19,22 @@ public class DatabaseMetadataCache
 {
     private readonly ConcurrentDictionary<String, TableMetadata> _cache = [];
     private readonly ConcurrentDictionary<String, EndpointTableInfo> _endpoints = [];
-    private readonly ConcurrentDictionary<String, FormMetadata> _formCache = [];
     private readonly ConcurrentDictionary<String, UIElement> _xamlFormCache = [];
     private readonly ConcurrentDictionary<String, AppMetadata> _appMetaCache = [];
 
+    private FileSystemWatcher? FileWatcher { get; init; }
+    public DatabaseMetadataCache(IAppCodeProvider appCodeProvider, IOptions<AppOptions> appOptions)
+    {
+        if (appOptions.Value.Environment.Watch)
+            FileWatcher = CreateWatcher(appCodeProvider);
+
+    }
     public void ClearAll()
     {
         _cache.Clear();
         _endpoints.Clear();
-        _formCache.Clear();
         _appMetaCache.Clear();
-    }
-
-    public void Clear(String? schema, String? table)
-    {
-        var key = $":{schema}:{table}";
-        var realKeys = _cache.Keys.Where(x => x.EndsWith(key));
-        foreach (var realKey in realKeys)
-            _cache.TryRemove(realKey, out var value);
+        _xamlFormCache.Clear();
     }
 
     public async Task<TableMetadata> GetOrAddAsync(String? dataSource, String schema, String table, 
@@ -58,23 +59,6 @@ public class DatabaseMetadataCache
         return _appMetaCache.GetOrAdd(key, meta);
     }
 
-
-    public void RemoveFormFromCache(String? dataSource, String schema, String table, String key)
-    {
-        var dictKey = $"{dataSource}:{schema}:{table}:{key.ToLowerInvariant()}";
-        _formCache.TryRemove(dictKey, out var _);
-    }
-
-    public async Task<FormMetadata> GetOrAddFormAsync(String? dataSource, TableMetadata meta, String key,
-    Func<String?, TableMetadata, String, Func<Form>, Task<FormMetadata>> getForm, Func<Form> getDefaultForm)
-    {
-        var dictKey = $"{dataSource}:{meta.Schema}:{meta.Name}:{key.ToLowerInvariant()}";
-        if (_formCache.TryGetValue(dictKey, out var form))
-            return form;
-        form = await getForm(dataSource, meta, key, getDefaultForm);
-        //return form; 
-        return _formCache.GetOrAdd(dictKey, form);
-    }
     public async Task<UIElement> GetOrAddXamlFormAsync(String? dataSource, TableMetadata meta, String key,
          Func<UIElement> getDefaultForm)
     {
@@ -96,5 +80,27 @@ public class DatabaseMetadataCache
         if (_endpoints.TryGetValue(path, out var modelInfo))
             return modelInfo;
         return null;
+    }
+
+    private void Watcher_Changed(Object sender, FileSystemEventArgs e)
+    {
+        ClearAll(); // All items! References!
+    }
+    private FileSystemWatcher? CreateWatcher(IAppCodeProvider appCodeProvider)
+    {
+        var path = appCodeProvider.GetMainModuleFullPath(".", String.Empty);
+        if (String.IsNullOrEmpty(path))
+            return null;
+        var watcher = new FileSystemWatcher(path, "metadata.json")
+        {
+            IncludeSubdirectories = true,            
+            NotifyFilter =
+                NotifyFilters.LastWrite | NotifyFilters.Size | NotifyFilters.Attributes
+                | NotifyFilters.FileName | NotifyFilters.CreationTime
+        };
+        watcher.Changed += Watcher_Changed;
+        watcher.Created += Watcher_Changed;
+        watcher.EnableRaisingEvents = true;
+        return watcher;
     }
 }

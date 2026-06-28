@@ -3,6 +3,7 @@
 using System;
 using System.Linq;
 using System.Collections.Generic;
+using System.Collections.Concurrent;
 
 using Newtonsoft.Json;
 
@@ -16,12 +17,32 @@ public enum EndpointKind
     Undefined,
     Catalog,
     Document,
+    Operation,
     Journal,
+    Details
 }
 public enum ColumnType
 {
     // semantic types
     Id,
+    Name,
+    Memo,
+    RowNumber,
+    Done,
+    Void,
+    IsSystem,
+    IsFolder,
+    Owner,
+    Parent,
+    User,
+    RowKind,
+    Operation,
+    Document,
+    RowVersion,
+    Enum,
+    AutoNum,
+    Company,
+    // Simple fields
     String,
     Ref,
     Date,
@@ -30,8 +51,6 @@ public enum ColumnType
     Boolean,
     //
     Stream,
-    Enum,
-    Operation,
     // sql
     BigInt,
     Int,
@@ -43,11 +62,11 @@ public enum ColumnType
     Float,
     Uniqueidentifier,
     VarBinary,
-    RowVersion,
     TimeStamp = RowVersion  // SQL INFORMATION_SCHEMA.DATA_TYPE uses TimeStamp
 }
 
 public record ReferenceMember(TableColumn Column, TableMetadata Table, Int32 Index);
+public record RefDescriptor(Int32 Index, TableColumn Column, TableMetadata Table);
 
 public record ColumnReference
 {
@@ -56,69 +75,72 @@ public record ColumnReference
     internal String SqlTableName => $"{RefSchema}.[{RefTable}]";
 }
 
+
 public record ColumnReferenceToMe : ColumnReference
 {
     public String Column { get; init; } = default!;
 }
 
-[Flags]
-public enum TableColumnRole
-{
-    PrimaryKey = 0x1,  // 1
-    Name       = 0x2,  // 2
-    Code       = 0x4,  // 4
-    RowNo      = 0x8,  // 8 (RowNo + PrimaryKey) = 0x9 (9)
-    Void       = 0x10, // 16
-    Parent     = 0x20, // 32 (Parent + PrimaryKey) = 0x33
-    IsFolder   = 0x40, // 64
-    IsSystem   = 0x80, // 128
-    Done       = 0x100, // 256
-    Kind       = 0x200, // 512
-    Owner      = 0x400, // 1024
-    Number     = 0x800, // 2048
-    SystemName = 0x1000,// 4096
-}
-
 public record TableColumn
 {
+    public TableColumn() { }
+    public TableColumn(String name, ColumnType type)
+    {
+        Name = name;
+        Type = type;
+    }
     public String Name { get; set; } = default!;
     public ColumnType Type { get; init; } = default!;
-    public String Target { get; init; } = default!;
+    public String? Target { get; init; } // for refs
+    public String? Key { get; init; } // for enum, autonum
+
+    [JsonIgnore]
+    public TableMetadata? RefTable { get; set; }
+    [JsonIgnore]
+    public TableMetadata RefTableCheck => RefTable ?? throw new InvalidOperationException($"RefTable for '{Name}' is null");
+
+    [JsonIgnore]
+    internal Boolean IsRef => Type == ColumnType.Ref || Type == ColumnType.Owner || 
+            Type == ColumnType.User || Type == ColumnType.Document || Type == ColumnType.Operation || 
+            Type == ColumnType.Company;
+
+    internal String Presentation
+    {
+        get
+        {
+            if (Type == ColumnType.Ref)
+                return RefTableCheck.Label;
+            return Constants.FieldNames.Name;
+        }
+    }
 
     #region Database Fields
-    public String? Label { get; init; } = default!;
     public Int32 MaxLength { get; init; }
     public Int32 Scale { get; init; }
     public ColumnReference Reference { get; init; } = default!;
     public String? DbName { get; init; }
     public ColumnType? DbDataType { get; init; }
-    public TableColumnRole Role { get; init; } = default!;
-    public Int32 Order { get; init; }
-    public Int32 DbOrder { get; init; }
+    
     public String? Computed { get; init; }
     public Boolean Required { get; init; }
     public Boolean Total { get; init; }
     public Boolean Unique { get; init; }
     #endregion
-    internal Boolean IsReference => Reference != null && Reference.RefTable != null && Type != ColumnType.Enum;
     internal Boolean IsEnum => Type == ColumnType.Enum;
-    internal Boolean IsBitField => Type == ColumnType.Bit && Role == 0;
-    internal Boolean IsBlob => Type == ColumnType.Stream;
-    internal Boolean IsString => Type == ColumnType.String;
-    internal Boolean Exists => DbName != null && DbDataType != null;
 
+    [JsonIgnore]
     internal Boolean HasDefaultBit => 
-           Role.HasFlag(TableColumnRole.IsFolder)
-        || Role.HasFlag(TableColumnRole.IsSystem)
-        || Role.HasFlag(TableColumnRole.Void)
-        || Role.HasFlag(TableColumnRole.Done);
+           Type == ColumnType.IsFolder
+        || Type == ColumnType.IsSystem
+        || Type == ColumnType.Void
+        || Type == ColumnType.Done;
 
-    internal Boolean IsVoid => Role.HasFlag(TableColumnRole.Void);
-    internal Boolean IsParent => Role.HasFlag(TableColumnRole.Parent);
-    internal Boolean IsName => Role.HasFlag(TableColumnRole.Name);
-    internal Boolean IsRowNo => Role.HasFlag(TableColumnRole.RowNo);
-    internal Boolean IsSearchable => Type == ColumnType.String;
-    internal Boolean IsMemo => Name == "Memo";
+    [JsonIgnore]
+    internal Boolean IsVoid => Type == ColumnType.Void;
+    [JsonIgnore]
+    internal Boolean IsSearchable => Type == ColumnType.String || Type == ColumnType.Name || Type == ColumnType.Memo;
+    [JsonIgnore]
+    internal Boolean IsMemo => Type == ColumnType.Memo;
 }
 
 
@@ -147,8 +169,8 @@ public record TableApply
     #region Database Fields
     public Int16 InOut { get; init; } = default!;
     public Boolean Storno { get; init; }
-    public ColumnReference Journal { get; init; } = default!;
-    public ColumnReference? Details { get; init; }
+    public ColumnReference JournalOld { get; init; } = default!;
+    public ColumnReference? DetailsOld { get; init; }
     public List<ApplyMapping>? Mapping { get; init; } = [];
     public String? DetailsKind { get; init; }
     #endregion
@@ -188,7 +210,13 @@ public record ReportItemMetadata
         _ => RefTable
     };
 }
-public record DetailsKind(String Name, String Label);
+public enum TableTrait
+{
+    Audit,
+    Tags,
+    Color
+}
+
 public record TableMetadata
 {
     #region Database fields
@@ -197,26 +225,40 @@ public record TableMetadata
     public String Table { get; set; } = default!;
     public String Model { get; set; } = default!;
     public String Path { get; set; } = default!;
+    public String Label { get; set; } = default!;
+
     public Dictionary<String, TableColumn> Fields { get; init; } = [];
 
+    [JsonIgnore]
     public List<TableColumn> Columns => [.. Fields.Select(
         kp => { kp.Value.Name = kp.Key; return kp.Value; }
     )];
 
+    public List<TableTrait> Traits { get; init; } = [];
+
+    public String? Storage { get; set; }
+    public Dictionary<String, TableMetadata> Details { get; private set; } = [];
+    public List<String> Kinds { get; init; } = [];
+    public ConcurrentDictionary<String, FormMetadata> Forms { get; init; } = [];
+
+    [JsonIgnore]
+    public TableMetadata? Origin { get; set; }
+
+
     // for sql
-    public String? TypeName => $"T{Model}";
+    [JsonIgnore]
+    public String TypeName => $"T{Model}";
+    [JsonIgnore]
+    public String RefTypeName => $"TR{Model}";
+    [JsonIgnore]
     public String CollectionName => Model.Plural();
-
-
     // OLD
-    public String Name { get; init; } = default!;
-
-    //public List<TableColumn> Columns { get; internal set; } = [];
     public String? ItemsName { get; init; }
     public String? ItemName { get; init; }
     public EditWithMode EditWith { get; init; }
-    public List<TableMetadata> Details { get; private set; } = [];
-    public ColumnReference? ParentTable { get; init; }
+
+    #endregion
+
 
     public String? ItemsLabel { get; init; }
     public String? ItemLabel { get; init; }
@@ -224,65 +266,83 @@ public record TableMetadata
     public Boolean UseFolders { get; init; }    
     public String? DbName { get; init; }
     public String? DbSchema { get; init; }
-    #endregion
-    public List<TableApply>? Apply { get; init; }
-    public List<DetailsKind> Kinds { get; init; } = [];
+    public List<TableApply>? ApplyOld { get; init; }
     public List<ReportItemMetadata> ReportItems { get; init; } = [];
     public List<ColumnReferenceToMe> RefsToMe { get; init; } = [];
-    // internal variables
-    internal String PrimaryKeyField => "Id";
-    internal String IsFolderField => Columns.FirstOrDefault(c => c.Role.HasFlag(TableColumnRole.IsFolder))?.Name
-        ?? throw new InvalidOperationException($"The table {SqlTableName} does not have a IsFolder column");
-    internal String ParentField => Columns.FirstOrDefault(c => c.Role.HasFlag(TableColumnRole.Parent))?.Name
-        ?? throw new InvalidOperationException($"The table {SqlTableName} does not have a Parent column");
-    internal String RowNoField => Columns.FirstOrDefault(c => c.Role.HasFlag(TableColumnRole.RowNo))?.Name
-        ?? throw new InvalidOperationException($"The table {SqlTableName} does not have a RowNumber column");
-    internal String NameField => Columns.FirstOrDefault(c => c.Role.HasFlag(TableColumnRole.Name))?.Name
-        ?? throw new InvalidOperationException($"The table {SqlTableName} does not have a Name column");
-    internal String DoneField => Columns.FirstOrDefault(c => c.Role.HasFlag(TableColumnRole.Done))?.Name
-        ?? throw new InvalidOperationException($"The table {SqlTableName} does not have a Done column");
-    internal String KindField => Columns.FirstOrDefault(c => c.Role.HasFlag(TableColumnRole.Kind))?.Name
-        ?? throw new InvalidOperationException($"The table {SqlTableName} does not have a Kind column");
 
-    internal String RealItemName => ItemsName != null ? ItemsName.Singular() : ItemName ?? Name.Singular();
-    internal String RealItemsName => ItemsName ?? Name;  
-    internal String RealTypeName => $"T{Name}";
-    internal String TableTypeName => $"{Schema}.[{Model}.Meta.TableType]";
-    internal String RealItemLabel => ItemLabel ?? $"@{RealItemName}";
+    // Service variables
+    [JsonIgnore]
+    public String SqlSchema => Schema.ToSqlSchema();
+    [JsonIgnore]
+    public String SqlTableName => $"{SqlSchema}.[{Table}]";
+    [JsonIgnore]
+    public String SqlSequenceName => $"{SqlSchema}.[SQ_{Table}]";
+    [JsonIgnore]
+    internal String SqlTableTypeName => $"{SqlSchema}.[{Model}.Meta.TableType]";
+    [JsonIgnore]
+    public String? FileHash { get; set; }
+
+    internal String PrimaryKeyField => "Id";
+    internal String RowKindField => Columns.FirstOrDefault(c => c.Type == ColumnType.RowKind)?.Name
+        ?? throw new InvalidOperationException($"The table {SqlTableName} does not have a RowKind column");
+
+    internal String RealItemName => ItemsName != null ? ItemsName.Singular() : ItemName ?? Table.Singular();
+    internal String RealItemsName => ItemsName ?? Table;  
     internal String RealItemsLabel => ItemsLabel ?? $"@{RealItemsName}";
-    internal String SqlTableName => $"{Schema}.[{Table}]";
-    internal Boolean IsDocument => Schema == "doc";
-    internal Boolean IsEnum => Schema == "enm";
-    internal Boolean IsJournal => Schema == "jrn";
-    internal Boolean IsOperation => Schema == "op";
+    internal Boolean IsOperation => Schema == "operation";
+
+    [JsonIgnore]
+    internal Boolean IsDocument => Schema == Constants.SchemaNames.Document;
+    [JsonIgnore]
+    internal Boolean IsJournal => Schema == Constants.SchemaNames.Journal;
+    [JsonIgnore]
+    internal Boolean HasPeriod => IsDocument || IsJournal;
     internal Boolean HasDbTable => !String.IsNullOrEmpty(DbName) && !String.IsNullOrEmpty(DbSchema);
 
-    internal IEnumerable<TableColumn> PrimaryKeys => Columns.Where(c => c.Role.HasFlag(TableColumnRole.PrimaryKey));
+    internal IEnumerable<TableColumn> PrimaryKeys => Columns.Where(c => c.Type == ColumnType.Id);
     internal Boolean HasSequence => PrimaryKeys.Count() == 1 && PrimaryKeys.First().Type == ColumnType.Id;
 
+    internal void SetDetailDefaults(TableMetadata table)
+    {
+        Schema = table.Schema;
+        Kind = EndpointKind.Details;
+        if (String.IsNullOrEmpty(Table))
+            Table = Model.ToPascalCase().Plural();
+    }
     internal void SetDefaults(String schema, String table)
     {
-        Path = $"{schema}/{table}";
+        Path = $"/{schema}/{table}";
         if (String.IsNullOrEmpty(Schema))
-            Schema = schema.FromFolder();
+            Schema = schema;
         if (String.IsNullOrEmpty(Table))
-            Table = table.Plural();
+            Table = table.ToPascalCase().Plural();
         if (String.IsNullOrEmpty(Model))
             Model = table.ToPascalCase();
         if (Kind == EndpointKind.Undefined)
             Kind = schema.ToEndpointKind();
+        if (String.IsNullOrEmpty(Label))
+            Label = Constants.FieldNames.Name;
+
+        foreach (var d in Details)
+            d.Value.SetDetailDefaults(this);
+
+        Forms.GetOrAdd(Constants.FormNames.Index, 
+            key => DefaultFormBuilder.CreateIndexForm(this))
+        .SetDefaults(this);
+
+        Forms.GetOrAdd(Constants.FormNames.Edit, 
+            key => DefaultFormBuilder.CreateEditForm(this))
+        .SetDefaults(this);
     }
 }
 
 public record OperationMetadata(String Id, String? Name, String? Category);
-
 public record EnumValueMetadata(String Id, String Name, Int32 Order, Boolean? Inactive);
 public record EnumMetadata(String Name, EnumValueMetadata[] Values);
 
 public record AppMetadata
 {
     public Guid Id { get; init; } = default!;
-    public ColumnType IdDataType { get; init; }
     public TableMetadata[] Tables { get; init; } = [];
     public OperationMetadata[] Operations { get; init; } = [];
     public EnumMetadata[] Enums { get; init; } = [];

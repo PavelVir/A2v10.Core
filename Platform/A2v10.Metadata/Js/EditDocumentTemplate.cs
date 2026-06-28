@@ -1,6 +1,5 @@
 ﻿// Copyright © 2025 Oleksandr Kukhtin. All rights reserved.
 
-using Jint.Runtime;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -8,65 +7,66 @@ using System.Threading.Tasks;
 
 namespace A2v10.Metadata;
 
-internal partial class PlainModelBuilder
+internal partial class JavascriptBuilder
 {
+
     private Task<String> CreateDocumentTemplate()
     {
         IEnumerable<String> defaults()
         {
-            if (_table.Columns.Any(c => c.Name == "Date"))
-                yield return $$"""'{{_table.RealItemName}}.Date'() { return du.today(); }""";
-            if (_baseTable != null && _baseTable.IsOperation)
+            if (Table.Columns.Any(c => c.Name == "Date"))
+                yield return $$"""'{{Table.Model}}.Date'() { return du.today(); }""";
+            if (Table.Origin != null && Table.Origin.IsOperation)
             {
-                var opColumn = _table.Columns.FirstOrDefault(c => c.Type == ColumnType.Operation);
+                var opColumn = Table.Columns.FirstOrDefault(c => c.Type == ColumnType.Operation);
                 if (opColumn != null)
-                    yield return $$"""'{{_table.RealItemName}}.{{opColumn.Name}}'() { return { Id: '{{_baseTable.Name.ToLowerInvariant()}}', Name: '{{_baseTable.RealItemName}}'};}""";
+                    yield return $$"""'{{Table.Model}}.{{opColumn.Name}}'() { return { Id: '{{Table.Origin.Table.ToLowerInvariant()}}', Name: '{{Table.Origin.Model}}'};}""";
             }
         }
 
         IEnumerable<String> properties()
         {
-            if (_table.Details.Count > 0)
+            if (Table.Details.Count > 0)
             {
-                var fd = _table.Details.First();
+                var fd = Table.Details.Select(x => x.Value).First();
                 if (fd.Kinds.Count == 0)
-                    yield return $$"""'{{_table.RealTypeName}}.$$Tab': {type: String, value: '{{fd.Name}}'}""";
+                    yield return $$"""'{{Table.TypeName}}.$$Tab': {type: String, value: '{{fd.Table}}'}""";
                 else
-                    yield return $$"""'{{_table.RealTypeName}}.$$Tab': {type: String, value: '{{fd.Kinds.First().Name}}'}""";
+                    yield return $$"""'{{Table.TypeName}}.$$Tab': {type: String, value: '{{fd.Kinds.First()}}'}""";
             }
-            foreach (var c in _table.Columns.Where(c => !String.IsNullOrEmpty(c.Computed)))
-                yield return $$"""'{{_table.RealTypeName}}.{{c.Name}}'() { return {{c.Computed}};}""";
+            foreach (var c in Table.Columns.Where(c => !String.IsNullOrEmpty(c.Computed)))
+                yield return $$"""'{{Table.TypeName}}.{{c.Name}}'() { return {{c.Computed}};}""";
 
-            foreach (var d in _table.Details)
+            foreach (var d in Table.Details.Select(x => x.Value))
             {
                 foreach (var c in d.Columns.Where(c => !String.IsNullOrEmpty(c.Computed)))
-                    yield return $$"""'{{d.RealTypeName}}.{{c.Name}}'() { return {{c.Computed}};}""";
+                    yield return $$"""'{{d.TypeName}}.{{c.Name}}'() { return {{c.Computed}};}""";
                 foreach (var c in d.Columns.Where(c => c.Total))
-                    yield return $$"""'{{d.RealTypeName}}Array.{{c.Name}}'() { return this.$sum(c => c.{{c.Name}}); }""";
+                    yield return $$"""'{{d.TypeName}}Array.{{c.Name}}'() { return this.$sum(c => c.{{c.Name}}); }""";
             }
         }
 
         IEnumerable<String> validators()
         {
-            foreach (var col in _table.Columns.Where(c => c.Required))
-                yield return $"'{_table.RealItemName}.{col.Name}': `@[Error.Required]`";
+            foreach (var col in Table.Columns.Where(c => c.Required))
+                yield return $"'{Table.Model}.{col.Name}': `@[Error.Required]`";
 
-            foreach (var d in _table.Details)
+            foreach (var d in Table.Details.Select(x => x.Value))
             {
                 if (d.Kinds.Count > 0)
                     foreach (var k in d.Kinds)
                         foreach (var c in d.Columns.Where(c => c.Required))
-                            yield return $"'{_table.RealItemName}.{k.Name}[].{c.Name}': `@[Error.Required]`";
+                            yield return $"'{Table.Model}.{k}[].{c.Name}': `@[Error.Required]`";
                 else
                     foreach (var c in d.Columns.Where(c => c.Required))
-                        yield return $"'{_table.RealItemName}.{d.RealItemsName}[].{c.Name}': `@[Error.Required]`";
+                        yield return $"'{Table.Model}.{d.CollectionName}[].{c.Name}': `@[Error.Required]`";
             }
         }
 
 
         const String jsDivider = ",\n\t\t";
 
-        var endpoint = _table.EndpointPathUseBase(_baseTable);
+        var endpoint = Table.EndpointPathUseBase(Table.Origin);
         var templ = $$"""
         const du = require('std:utils').date;
         const template = {
@@ -92,134 +92,16 @@ internal partial class PlainModelBuilder
 
         async function apply() {
             const ctrl = this.$ctrl;
-            await ctrl.$invoke('apply', {Id: this.{{_table.RealItemName}}.{{_table.PrimaryKeyField}}}, '{{endpoint}}');
-        	this.{{_table.RealItemName}}.Done = true;
+            await ctrl.$invoke('apply', {Id: this.{{Table.Model}}.{{Table.PrimaryKeyField}}}, '{{endpoint}}');
+        	this.{{Table.RealItemName}}.Done = true;
             ctrl.$emitGlobal('g.document.applied', this);
             ctrl.$requery();
         }
 
         async function unApply() {
             const ctrl = this.$ctrl;
-            await ctrl.$invoke('unapply', {Id: this.{{_table.RealItemName}}.{{_table.PrimaryKeyField}}}, '{{endpoint}}');
-        	this.{{_table.RealItemName}}.Done = false;
-            ctrl.$emitGlobal('g.document.applied', this);
-            ctrl.$requery();
-        }
-        """;
-        return Task.FromResult<String>(templ);
-    }
-
-    private Task<String> CreateDocumentTSTemplate()
-    {
-        IEnumerable<String> defaults()
-        {
-            if (_table.Columns.Any(c => c.Name == "Date"))
-                yield return $$"""'{{_table.RealItemName}}.Date'() { return du.today(); }""";
-            if (_baseTable != null && _baseTable.IsOperation)
-            {
-                var opColumn = _table.Columns.FirstOrDefault(c => c.Type == ColumnType.Operation);
-                if (opColumn != null)
-                    yield return $$"""'{{_table.RealItemName}}.{{opColumn.Name}}'() { return { Id: '{{_baseTable.Name.ToLowerInvariant()}}', Name: '{{_baseTable.RealItemName}}'};}""";
-            }
-        }
-
-        IEnumerable<String> properties()
-        {
-            if (_table.Details.Count > 0)
-            {
-                var fd = _table.Details.First();
-                if (fd.Kinds.Count == 0)
-                    yield return $$"""'{{_table.RealTypeName}}.$$Tab': {type: String, value: '{{fd.Name}}'}""";
-                else
-                    yield return $$"""'{{_table.RealTypeName}}.$$Tab': {type: String, value: '{{fd.Kinds.First().Name}}'}""";
-            }
-            foreach (var c in _table.Columns.Where(c => !String.IsNullOrEmpty(c.Computed)))
-                yield return $$"""'{{_table.RealTypeName}}.{{c.Name}}'(this: {{_table.RealTypeName}}) { return {{c.Computed}};}""";
-
-            foreach (var d in _table.Details)
-            {
-                foreach (var c in d.Columns.Where(c => !String.IsNullOrEmpty(c.Computed)))
-                    yield return $$"""'{{d.RealTypeName}}.{{c.Name}}'(this: {{d.RealTypeName}}) { return {{c.Computed}};}""";
-                foreach (var c in d.Columns.Where(c => c.Total))
-                    yield return $$"""'{{d.RealTypeName}}Array.{{c.Name}}'(this: {{d.RealTypeName}}Array) { return this.$sum(c => c.{{c.Name}}); }""";
-            }
-        }
-
-        IEnumerable<String> validators()
-        {
-            foreach (var col in _table.Columns.Where(c => c.Required))
-                yield return $"'{_table.RealItemName}.{col.Name}': `@[Error.Required]`";
-
-            foreach (var d in _table.Details)
-            {
-                if (d.Kinds.Count > 0)
-                {
-                    foreach (var k in d.Kinds)
-                        foreach (var c in d.Columns.Where(c => c.Required))
-                            yield return $"'{_table.RealItemName}.{k.Name}[].{c.Name}': `@[Error.Required]`";
-                }
-                else
-                {
-                    foreach (var c in d.Columns.Where(c => c.Required))
-                        yield return $"'{_table.RealItemName}.{d.RealItemsName}[].{c.Name}': `@[Error.Required]`";
-                }
-            }
-        }
-
-        IEnumerable<String> types()
-        {
-            yield return "TRoot";
-            yield return _table.RealTypeName;
-            foreach (var r in _refFields.RefTables())
-                yield return r.RealTypeName;
-            foreach (var d in _table.Details)
-            {
-                yield return d.RealTypeName;
-                yield return $"{d.RealTypeName}Array";
-            }
-        }
-
-        const String jsDivider = ",\n\t\t";
-
-        var endpoint = _table.EndpointPathUseBase(_baseTable);
-        var templ = $$"""
-
-        import { {{String.Join(", ", types())}} } from './edit';
-
-        const du: UtilsDate = require('std:utils').date;
-        const template: Template = {
-            options: {
-                globalSaveEvent: 'g.document.saved'
-            },
-            properties: {
-                {{String.Join(jsDivider, properties())}}
-            },
-            defaults: {
-                {{String.Join(jsDivider, defaults())}}
-            },
-            validators: {
-                {{String.Join(jsDivider, validators())}}
-            },
-            commands: {
-                apply,
-                unApply
-            }
-        };
-
-        export default template;
-
-        async function apply(this: TRoot) {
-            const ctrl: IController = this.$ctrl;
-            await ctrl.$invoke('apply', {Id: this.{{_table.RealItemName}}.{{_table.PrimaryKeyField}}}, '{{endpoint}}');
-        	this.{{_table.RealItemName}}.Done = true;
-            ctrl.$emitGlobal('g.document.applied', this);
-            ctrl.$requery();
-        }
-
-        async function unApply(this: TRoot) {
-            const ctrl: IController = this.$ctrl;
-            await ctrl.$invoke('unapply', {Id: this.{{_table.RealItemName}}.{{_table.PrimaryKeyField}}}, '{{endpoint}}');
-        	this.{{_table.RealItemName}}.Done = false;
+            await ctrl.$invoke('unapply', {Id: this.{{Table.Model}}.{{Table.PrimaryKeyField}}}, '{{endpoint}}');
+        	this.{{Table.RealItemName}}.Done = false;
             ctrl.$emitGlobal('g.document.applied', this);
             ctrl.$requery();
         }

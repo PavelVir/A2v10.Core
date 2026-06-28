@@ -17,40 +17,36 @@ internal partial class ModelBuilderFactory(
             throw new InvalidOperationException("Meta is null");
 
         var srcTable = await _metadataProvider.GetSchemaAsync(modelBase.Meta, modelBase.DataSource);
-        var (table, baseTable) = await GetTablesAsync(modelBase.DataSource, srcTable);
 
-        return new BaseModelBuilder(_serviceProvider) {
-            _dataSource = modelBase.DataSource,
-            _platformUrl = platformUrl,
-            _table = table,
-            _baseTable = baseTable,
-            _refFields = await _metadataProvider.ReferenceFieldsAsync(modelBase.DataSource, table),
-            _appMeta = await _metadataProvider.GetAppMetadataAsync(modelBase.DataSource)
+        var bd = new BuilderDescriptor()
+        {
+            DataSource = modelBase.DataSource,
+            PlatformUrl = platformUrl,
+            Table = srcTable,
         };
+
+        return new BaseModelBuilder(_serviceProvider, bd);
     }
     public async Task<IModelBuilder> BuildAsync(IPlatformUrl platformUrl, TableMetadata table, String? dataSource)
     {
-        var tables = await GetTablesAsync(dataSource, table);
-        return new BaseModelBuilder(_serviceProvider)
+        var bd = new BuilderDescriptor()
         {
-            _dataSource = dataSource,
-            _platformUrl = platformUrl,
-            _table = tables.table,
-            _baseTable = tables.baseTable,
-            _refFields = await _metadataProvider.ReferenceFieldsAsync(dataSource, tables.table),
-            _appMeta = await _metadataProvider.GetAppMetadataAsync(dataSource)
+            DataSource = dataSource,
+            PlatformUrl = platformUrl,
+            Table = table,
         };
+        return new BaseModelBuilder(_serviceProvider, bd);
     }
 
-    private async Task<(TableMetadata table, TableMetadata? baseTable)> GetTablesAsync(String? dataSource, TableMetadata table)
+    public IEndpointModelBuilder BuildEndpoint(IPlatformUrl platformUrl, TableMetadata table, String? dataSource)
     {
-        TableMetadata? baseTable = null;
-        if (!table.ParentTable.IsEmpty())
+        var bd = new BuilderDescriptor()
         {
-            baseTable = table;
-            table = await _metadataProvider.GetSchemaAsync(dataSource, table.ParentTable!.RefSchema, table.ParentTable.RefTable)
-                ?? throw new InvalidOperationException($"Parent Table {table.ParentTable.RefTable} not found");
-        }
-        return (table, baseTable);
+            DataSource = dataSource,
+            PlatformUrl = platformUrl,
+            Table = table,
+        };
+        return new EndpointModelBuilder(_serviceProvider, bd);
+
     }
 }
